@@ -133,6 +133,7 @@ pre_up(void)
 	switch (pid) {
 	case 0:
 		wait_if(fp);
+		/* TODO: Need to unblock read-end if wait_if fails */
 		break;
 	case -1:
 		err(EXIT_FAILURE, "fork failed");
