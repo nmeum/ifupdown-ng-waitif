@@ -1,5 +1,5 @@
 PREFIX  ?= /usr/local
-EXECDIR ?= $(PREFIX)/libexec
+EXECDIR ?= $(PREFIX)/libexec/ifupdown-ng
 RUNDIR  ?= /var/run
 
 CPPFLAGS += -D_POSIX_C_SOURCE=200809L
