@@ -1,8 +1,12 @@
 PREFIX  ?= /usr/local
 EXECDIR ?= $(PREFIX)/libexec
+RUNDIR  ?= /var/run
+
+CPPFLAGS += -D_POSIX_C_SOURCE=200809L
+CPPFLAGS += -DRUNDIR=\"$(RUNDIR)\"
 
 CFLAGS ?= -O0 -g -Werror
-CFLAGS += -std=c99 -D_POSIX_C_SOURCE=200809L
+CFLAGS += -std=c99
 CFLAGS += -Wpedantic -Wall -Wextra \
 	      -Wmissing-prototypes -Wpointer-arith \
 	      -Wstrict-prototypes -Wshadow -Wformat-nonliteral

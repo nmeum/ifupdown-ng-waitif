@@ -30,7 +30,6 @@ struct {
 	{ "up", PHASE_UP },
 };
 
-#define RUNDIR    "/var/run"
 #define PHASE_ENV "PHASE"
 #define IFACE_ENV "IFACE"
 
