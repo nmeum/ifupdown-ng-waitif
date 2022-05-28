@@ -30,9 +30,6 @@ struct {
 	{ "up", PHASE_UP },
 };
 
-#define PHASE_ENV "PHASE"
-#define IFACE_ENV "IFACE"
-
 /* TODO: Support $VERBOSE */
 
 static ifupdown_phase
@@ -40,7 +37,7 @@ get_phase(void)
 {
 	const char *phase;
 
-	if (!(phase = getenv(PHASE_ENV)))
+	if (!(phase = getenv("PHASE")))
 		errx(EXIT_FAILURE, "Couldn't determine current phase");
 
 	for (size_t i = 0; i < LEN(phases); i++) {
@@ -58,7 +55,7 @@ fifo_path(void)
 	const char *iface;
 	static char fp[PATH_MAX+1];
 
-	if (!(iface = getenv(IFACE_ENV)))
+	if (!(iface = getenv("IFACE")))
 		errx(EXIT_FAILURE, "Couldn't determine interface name");
 
 	ret = snprintf(fp, sizeof(fp), "%s/%s.waitif", RUNDIR, iface);
