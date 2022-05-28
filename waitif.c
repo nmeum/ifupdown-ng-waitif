@@ -9,6 +9,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
+#include <net/if.h>
 #include <libmnl/libmnl.h>
 #include <linux/if.h>
 #include <linux/if_link.h>
@@ -30,6 +31,11 @@ struct {
 	{ "up", PHASE_UP },
 };
 
+struct context {
+	int if_idx;
+	const char *fifo_path;
+};
+
 /* TODO: Support $VERBOSE */
 
 static ifupdown_phase
@@ -49,14 +55,20 @@ get_phase(void)
 }
 
 static const char*
-fifo_path(void)
+get_iface(void)
 {
-	int ret;
 	const char *iface;
-	static char fp[PATH_MAX+1];
 
 	if (!(iface = getenv("IFACE")))
 		errx(EXIT_FAILURE, "Couldn't determine interface name");
+	return iface;
+}
+
+static const char*
+fifo_path(const char *iface)
+{
+	int ret;
+	static char fp[PATH_MAX+1];
 
 	ret = snprintf(fp, sizeof(fp), "%s/%s.waitif", RUNDIR, iface);
 	if (ret < 0) {
@@ -71,15 +83,14 @@ fifo_path(void)
 static int
 data_cb(const struct nlmsghdr *nlh, void *data)
 {
-	const char *fp;
+	struct context *ctx;
 	struct ifinfomsg *ifm;
 
-	fp = (const char*)data;
+	ctx = (struct context*)data;
 	ifm = mnl_nlmsg_get_payload(nlh);
 
-	/* TODO: Determine index for $IFACE env */
-	if (ifm->ifi_index == 3 && ifm->ifi_flags & IFF_RUNNING) {
-		if (open(fp, O_WRONLY) == -1)
+	if (ifm->ifi_index == ctx->if_idx && ifm->ifi_flags & IFF_RUNNING) {
+		if (open(ctx->fifo_path, O_WRONLY) == -1)
 			err(EXIT_FAILURE, "opening write-end failed");
 
 		/* The proces running up() should be unblocked, we can stop. */
@@ -90,7 +101,7 @@ data_cb(const struct nlmsghdr *nlh, void *data)
 }
 
 static void
-wait_if(const char *fp)
+wait_if(struct context *ctx)
 {
 	int ret;
 	struct mnl_socket *nl;
@@ -104,7 +115,7 @@ wait_if(const char *fp)
 
 	ret = mnl_socket_recvfrom(nl, buf, sizeof(buf));
 	while (ret > 0) {
-		ret = mnl_cb_run(buf, ret, 0, 0, data_cb, (void *)fp);
+		ret = mnl_cb_run(buf, ret, 0, 0, data_cb, (void *)ctx);
 		if (ret <= 0)
 			break;
 		ret = mnl_socket_recvfrom(nl, buf, sizeof(buf));
@@ -120,15 +131,22 @@ pre_up(void)
 {
 	pid_t pid;
 	const char *fp;
+	const char *iface;
+	struct context ctx;
 
-	fp = fifo_path();
+	iface = get_iface();
+	fp = fifo_path(iface);
 	if (mkfifo(fp, 0600) == -1)
 		err(EXIT_FAILURE, "mkfifo failed");
+
+	ctx.fifo_path = fp;
+	if (!(ctx.if_idx = if_nametoindex(iface)))
+		errx(EXIT_FAILURE, "Unknown interface '%s'", iface);
 
 	pid = fork();
 	switch (pid) {
 	case 0:
-		wait_if(fp);
+		wait_if(&ctx);
 		/* TODO: Need to unblock read-end if wait_if fails */
 		break;
 	case -1:
@@ -142,12 +160,15 @@ static void
 up(void)
 {
 	const char *fp;
+	const char *iface;
 
 	/* TODO: Setup SIGALRM handler for timeout */
 
+	iface = get_iface();
+	fp = fifo_path(iface);
+
 	/* Block until writing end of FIFO was opened,
 	 * i.e. until the interface is up and running. */
-	fp = fifo_path();
 	if (open(fp, O_RDONLY) == -1)
 		err(EXIT_FAILURE, "opening read-end failed");
 }
