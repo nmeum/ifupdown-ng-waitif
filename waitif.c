@@ -293,13 +293,12 @@ up(void)
 	}
 	if (ret == -1)
 		err(EXIT_FAILURE, "read failed");
+	debug("Watchdog for interface '%s' %s", iface, (status == EXIT_SUCCESS) ? "succeeded" : "failed");
 
 	close(fd);
 	debug("Removing named pipe at: %s", fp);
 	if (unlink(fp) == -1)
 		warn("unlink failed");
-
-	debug("Watchdog for interface '%s' %s", iface, (status == EXIT_SUCCESS) ? "succeeded" : "failed");
 	exit(status);
 }
 
