@@ -84,5 +84,5 @@ with this program. If not, see <http://www.gnu.org/licenses/>.
 [alpine #13795]: https://gitlab.alpinelinux.org/alpine/aports/-/issues/13795
 [bncm-waitif web]: https://skarnet.org/software/bcnm/bcnm-waitif.html
 [netlink wikipedia]: https://en.wikipedia.org/wiki/Netlink
-[libmnl web]: https://github.com/ifupdown-ng/ifupdown-ng
+[libmnl web]: https://netfilter.org/projects/libmnl/
 [make web]: https://github.com/rocky/remake
