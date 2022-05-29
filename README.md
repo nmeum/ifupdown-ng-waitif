@@ -1,10 +1,6 @@
-# ifupdown-ng-waitif
-
-A PoC [ifupdown-ng][ifupdown-ng github] [executor][ifupdown-ng executor] which blocks until the interface is actually running.
-
 ## Background
 
-ifupdown-ng is a re-implementation of the `ifup` and `ifdown` commands provided by Debian and BusyBox.
+[ifupdown-ng][ifupdown-ng github] is a re-implementation of the `ifup` and `ifdown` commands provided by Debian and BusyBox.
 These commands configure network interfaces according to the `/etc/network/interfaces` configuration file.
 Interface configuration is split into multiple [phases][ifdown-ng phases].
 For each phase, different [executors][ifupdown-ng executor] are run.
