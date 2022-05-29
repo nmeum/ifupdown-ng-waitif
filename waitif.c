@@ -266,8 +266,8 @@ pre_up(void)
 static void
 up(void)
 {
-	int fd;
 	ssize_t ret;
+	int fd, status;
 	const char *fp;
 	const char *iface;
 	char buf[BUFSIZ];
@@ -281,7 +281,11 @@ up(void)
 	if ((fd = open(fp, O_RDONLY)) == -1)
 		err(EXIT_FAILURE, "opening read-end failed");
 
+	status = EXIT_SUCCESS;
 	while ((ret = read(fd, buf, sizeof(buf))) > 0) {
+		// Received error message via FIFO, update status accordingly.
+		status = EXIT_FAILURE;
+
 		if (write(STDERR_FILENO, buf, (size_t)ret) == -1)
 			err(EXIT_FAILURE, "writing error message failed");
 	}
@@ -291,7 +295,10 @@ up(void)
 	close(fd);
 	debug("Removing named pipe at: %s", fp);
 	if (unlink(fp) == -1)
-		err(EXIT_FAILURE, "unlink failed");
+		warn("unlink failed");
+
+	debug("Watchdog for interface '%s' %s", iface, (status == EXIT_SUCCESS) ? "succeeded" : "failed");
+	exit(status);
 }
 
 int
