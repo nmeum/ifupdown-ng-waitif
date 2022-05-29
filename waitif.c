@@ -286,6 +286,8 @@ up(void)
 		// Received error message via FIFO, update status accordingly.
 		status = EXIT_FAILURE;
 
+		// TODO: Prefix error message with program name.
+		// Ideally by buffering the message and using warnx(3).
 		if (write(STDERR_FILENO, buf, (size_t)ret) == -1)
 			err(EXIT_FAILURE, "writing error message failed");
 	}
