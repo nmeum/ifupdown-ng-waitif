@@ -2,7 +2,7 @@
 
 [ifupdown-ng][ifupdown-ng github] is a re-implementation of the `ifup` and `ifdown` commands provided by Debian and BusyBox.
 These commands configure network interfaces according to the `/etc/network/interfaces` configuration file.
-Interface configuration is split into multiple [phases][ifdown-ng phases].
+Interface configuration is split into multiple [phases][ifupdown-ng phases].
 For each phase, different [executors][ifupdown-ng executor] are run.
 For example, a DHCP client may be run as an executor in the `up` phase.
 Unfortunately, ifupdown-ng doesn't check the interface link state before running executors of the `up` phase.
