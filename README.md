@@ -18,6 +18,8 @@ In the `pre-up` phase a named pipe is created and a background process is spawne
 In the `up` phase, a process is created which opens the named pipe for reading and blocks until it is opened for writing by the aforementioned background process.
 As such, the provided executor blocks in the `up` phase until the interface has reached its desired state or a timeout occurs.
 The executor is implemented in this way to avoid a race condition where the interface changes to `IFF_RUNNING` before the netlink event listener is setup correctly.
+Alternatively, it may be possible only run this executor in the `up` phase and check the interface state manually once via the `SIOCGIFFLAGS` ioctl before the netlink event listener is setup.
+Unfortunately, libml does not seem to provide a wrapper for this ioctl.
 
 ## Installation
 
