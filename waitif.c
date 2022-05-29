@@ -1,4 +1,5 @@
 #include <err.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
 #include <stdio.h>
@@ -32,6 +33,7 @@ struct {
 };
 
 struct context {
+	int fd;
 	int if_idx;
 	const char *fifo_path;
 };
@@ -90,8 +92,8 @@ data_cb(const struct nlmsghdr *nlh, void *data)
 	ifm = mnl_nlmsg_get_payload(nlh);
 
 	if (ifm->ifi_index == ctx->if_idx && ifm->ifi_flags & IFF_RUNNING) {
-		if (open(ctx->fifo_path, O_WRONLY) == -1)
-			err(EXIT_FAILURE, "opening write-end failed");
+		if ((ctx->fd = open(ctx->fifo_path, O_WRONLY)) == -1)
+			return MNL_CB_ERROR;
 
 		/* The proces running up() should be unblocked, we can stop. */
 		return MNL_CB_STOP;
@@ -100,7 +102,7 @@ data_cb(const struct nlmsghdr *nlh, void *data)
 	return MNL_CB_OK;
 }
 
-static void
+static int
 wait_if(struct context *ctx)
 {
 	int ret;
@@ -109,9 +111,11 @@ wait_if(struct context *ctx)
 
 	nl = mnl_socket_open(NETLINK_ROUTE);
 	if (nl == NULL)
-		err(EXIT_FAILURE, "mnl_socket_open failed");
-	if (mnl_socket_bind(nl, RTMGRP_LINK, MNL_SOCKET_AUTOPID) < 0)
-		err(EXIT_FAILURE, "mnl_socket_bind failed");
+		return -1;
+	if (mnl_socket_bind(nl, RTMGRP_LINK, MNL_SOCKET_AUTOPID) < 0) {
+		mnl_socket_close(nl);
+		return -1;
+	}
 
 	ret = mnl_socket_recvfrom(nl, buf, sizeof(buf));
 	while (ret > 0) {
@@ -120,10 +124,13 @@ wait_if(struct context *ctx)
 			break;
 		ret = mnl_socket_recvfrom(nl, buf, sizeof(buf));
 	}
-	if (ret == -1)
-		err(EXIT_FAILURE, "libmnl receive error");
+	if (ret == -1) {
+		mnl_socket_close(nl);
+		return -1;
+	}
 
 	mnl_socket_close(nl);
+	return ctx->fd;
 }
 
 static void
@@ -145,10 +152,23 @@ pre_up(void)
 
 	pid = fork();
 	switch (pid) {
-	case 0:
-		wait_if(&ctx);
-		/* TODO: Need to unblock read-end if wait_if fails */
+	case 0: {
+		int fd;
+		const char *msg;
+
+		// XXX: If open(3) or write(3) fails, we can't do any
+		// meaningful error handling as up() won't be unblocked.
+		if ((fd = wait_if(&ctx)) == -1) {
+			msg = strerror(errno);
+			if ((fd = open(ctx.fifo_path, O_WRONLY)) == -1)
+				err(EXIT_FAILURE, "open write-end failed");
+			if (write(fd, msg, strlen(msg)) == -1 || write(fd, "\n", 1) == -1)
+				err(EXIT_FAILURE, "write failed");
+		}
+
+		close(fd);
 		break;
+	}
 	case -1:
 		err(EXIT_FAILURE, "fork failed");
 	}
@@ -159,8 +179,11 @@ pre_up(void)
 static void
 up(void)
 {
+	int fd;
+	ssize_t ret;
 	const char *fp;
 	const char *iface;
+	char buf[BUFSIZ];
 
 	/* TODO: Setup SIGALRM handler for timeout */
 
@@ -169,8 +192,16 @@ up(void)
 
 	/* Block until writing end of FIFO was opened,
 	 * i.e. until the interface is up and running. */
-	if (open(fp, O_RDONLY) == -1)
+	if ((fd = open(fp, O_RDONLY)) == -1)
 		err(EXIT_FAILURE, "opening read-end failed");
+
+	while ((ret = read(fd, buf, sizeof(buf))) > 0) {
+		if (write(STDERR_FILENO, buf, ret) == -1)
+			err(EXIT_FAILURE, "writing error message failed");
+	}
+	if (ret == -1)
+		err(EXIT_FAILURE, "read failed");
+	close(fd);
 }
 
 int
