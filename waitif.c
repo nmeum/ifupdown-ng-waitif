@@ -2,6 +2,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -35,6 +36,7 @@ struct {
 struct context {
 	int fd;
 	int if_idx;
+	sigset_t blockset;
 	const char *fifo_path;
 };
 
@@ -92,6 +94,8 @@ data_cb(const struct nlmsghdr *nlh, void *data)
 	ifm = mnl_nlmsg_get_payload(nlh);
 
 	if (ifm->ifi_index == ctx->if_idx && ifm->ifi_flags & IFF_RUNNING) {
+		if (sigprocmask(SIG_BLOCK, &ctx->blockset, NULL))
+			return MNL_CB_ERROR;
 		if ((ctx->fd = open(ctx->fifo_path, O_WRONLY)) == -1)
 			return MNL_CB_ERROR;
 
@@ -134,6 +138,59 @@ wait_if(struct context *ctx)
 }
 
 static void
+sigalarm(int num)
+{
+	int fd;
+	const char *fp;
+	const char *iface;
+	const char *errmsg = "timeout\n";
+
+	(void)num;
+
+	iface = get_iface();
+	fp = fifo_path(iface);
+
+	if ((fd = open(fp, O_WRONLY)) == -1)
+		err(EXIT_FAILURE, "open write-end failed");
+	if (write(fd, errmsg, strlen(errmsg)) == -1)
+		err(EXIT_FAILURE, "write failed");
+
+	exit(EXIT_FAILURE);
+}
+
+static void
+sethandler(void)
+{
+	struct sigaction act;
+
+	act.sa_flags = SA_RESTART;
+	act.sa_handler = sigalarm;
+	if (sigemptyset(&act.sa_mask) == -1)
+		err(EXIT_FAILURE, "sigemptyset failed");
+	if (sigaction(SIGALRM, &act, NULL))
+		err(EXIT_FAILURE, "sigaction failed");
+}
+
+static void
+setalarm(void)
+{
+	unsigned long delay;
+	const char *timeout;
+
+	if (!(timeout = getenv("IF_WAITIF_TIMEOUT")))
+		return; // no timeout configured
+
+	errno = 0;
+	delay = strtoul(timeout, NULL, 10);
+	if (!delay && errno)
+		err(EXIT_FAILURE, "strtoul failed");
+	else if (delay > UINT_MAX)
+		errx(EXIT_FAILURE, "timeout value '%lu' exceeds UINT_MAX", delay);
+	else if (delay)
+		alarm((unsigned int)delay);
+}
+
+static void
 pre_up(void)
 {
 	pid_t pid;
@@ -150,6 +207,12 @@ pre_up(void)
 	if (!(ctx.if_idx = if_nametoindex(iface)))
 		errx(EXIT_FAILURE, "Unknown interface '%s'", iface);
 
+	sethandler();
+	if (sigemptyset(&ctx.blockset) == -1)
+		err(EXIT_FAILURE, "sigemptyset failed");
+	sigaddset(&ctx.blockset, SIGALRM);
+	setalarm();
+
 	pid = fork();
 	switch (pid) {
 	case 0: {
@@ -159,6 +222,9 @@ pre_up(void)
 		// XXX: If open(3) or write(3) fails, we can't do any
 		// meaningful error handling as up() won't be unblocked.
 		if ((fd = wait_if(&ctx)) == -1) {
+			if (sigprocmask(SIG_BLOCK, &ctx.blockset, NULL))
+				err(EXIT_FAILURE, "blocking SIGALRM failed");
+
 			msg = strerror(errno);
 			if ((fd = open(ctx.fifo_path, O_WRONLY)) == -1)
 				err(EXIT_FAILURE, "open write-end failed");
@@ -184,8 +250,6 @@ up(void)
 	const char *fp;
 	const char *iface;
 	char buf[BUFSIZ];
-
-	// TODO: Setup SIGALRM handler for timeout
 
 	iface = get_iface();
 	fp = fifo_path(iface);
