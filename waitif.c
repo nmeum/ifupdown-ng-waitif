@@ -38,7 +38,7 @@ struct context {
 	const char *fifo_path;
 };
 
-/* TODO: Support $VERBOSE */
+// TODO: Support $VERBOSE
 
 static ifupdown_phase
 get_phase(void)
@@ -95,7 +95,7 @@ data_cb(const struct nlmsghdr *nlh, void *data)
 		if ((ctx->fd = open(ctx->fifo_path, O_WRONLY)) == -1)
 			return MNL_CB_ERROR;
 
-		/* The proces running up() should be unblocked, we can stop. */
+		// The proces running up() should be unblocked, we can stop.
 		return MNL_CB_STOP;
 	}
 
@@ -173,7 +173,7 @@ pre_up(void)
 		err(EXIT_FAILURE, "fork failed");
 	}
 
-	/* Parent just exits, child is kept running */
+	// Parent just exits, child is kept running
 }
 
 static void
@@ -185,13 +185,13 @@ up(void)
 	const char *iface;
 	char buf[BUFSIZ];
 
-	/* TODO: Setup SIGALRM handler for timeout */
+	// TODO: Setup SIGALRM handler for timeout
 
 	iface = get_iface();
 	fp = fifo_path(iface);
 
-	/* Block until writing end of FIFO was opened,
-	 * i.e. until the interface is up and running. */
+	// Block until writing end of FIFO was opened,
+	// i.e. until the interface is up and running.
 	if ((fd = open(fp, O_RDONLY)) == -1)
 		err(EXIT_FAILURE, "opening read-end failed");
 
@@ -218,7 +218,7 @@ main(void)
 		up();
 		return EXIT_SUCCESS;
 	default:
-		/* Don't need to do anything in this phase */
+		// Don't need to do anything in this phase
 		return EXIT_SUCCESS;
 	}
 }
