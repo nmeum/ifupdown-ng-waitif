@@ -12,7 +12,7 @@ Inspired by [bncm-waitif][bncm-waitif web], this repository provides an executor
 
 ## Design
 
-The implementation is a quite hacky, it would probably be easier to integrate this functionality directly into ifupdown-ng instead of implementing it in a separate executor.
+The implementation is quite hacky, it would probably be easier to integrate this functionality directly into ifupdown-ng instead of implementing it in a separate executor.
 The provided executor supports runs in two phases: `pre-up` and `up`.
 In the `pre-up` phase a named pipe is created and a background process is spawned which waits for the configured interface to change its state to `IFF_RUNNING` (see `netdevice(7)`).
 In the `up` phase, a process is created which opens the named pipe for reading and blocks until it is opened for writing by the aforementioned background process.
