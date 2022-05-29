@@ -241,10 +241,12 @@ pre_up(void)
 		// XXX: If open(3) or write(3) fails, we can't do any
 		// meaningful error handling as up() won't be unblocked.
 		if ((fd = wait_if(&ctx)) == -1) {
-			if (sigprocmask(SIG_BLOCK, &ctx.blockset, NULL))
-				err(EXIT_FAILURE, "blocking SIGALRM failed");
-
 			msg = strerror(errno);
+
+			// Ignore sigprocmask error as we always want
+			// to unblock the up() process via open(3).
+			sigprocmask(SIG_BLOCK, &ctx.blockset, NULL);
+
 			if ((fd = open(ctx.fifo_path, O_WRONLY)) == -1)
 				err(EXIT_FAILURE, "open write-end failed");
 			if (write(fd, msg, strlen(msg)) == -1 || write(fd, "\n", 1) == -1)
