@@ -220,7 +220,6 @@ pre_up(void)
 	if (sigemptyset(&ctx.blockset) == -1)
 		err(EXIT_FAILURE, "sigemptyset failed");
 	sigaddset(&ctx.blockset, SIGALRM);
-	setalarm();
 
 	ctx.fifo_path = fifo_path(iface);
 	if (mkfifo(ctx.fifo_path, 0600) == -1)
@@ -232,6 +231,8 @@ pre_up(void)
 	case 0: {
 		int fd;
 		const char *msg;
+
+		setalarm();
 
 		// XXX: If open(3) or write(3) fails, we can't do any
 		// meaningful error handling as up() won't be unblocked.
