@@ -39,7 +39,15 @@ Refer to the `GNUmakefile` regarding available configuration variables.
 
 ## Usage
 
-To-Do.
+In order to use this executor, add a `use waitif` declaration to your interface configuration in `/etc/network/interfaces`.
+For example:
+
+	iface wlan0
+		use waitif
+		use dhcp
+
+In this case, the `waitif` executor will block in the `up` phase until the interface switched to the `IFF_RUNNING` state.
+Afterwards, the `dhcp` executor is run and it will hopefully be able to retrieve a lease immediately.
 
 ## License
 
