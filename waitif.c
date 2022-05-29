@@ -72,6 +72,25 @@ get_phase(void)
 	return PHASE_UNKNOWN;
 }
 
+static unsigned int
+get_timeout(void)
+{
+	unsigned long delay;
+	const char *timeout;
+
+	if (!(timeout = getenv("IF_WAITIF_TIMEOUT")))
+		return 0; // no timeout configured
+
+	errno = 0;
+	delay = strtoul(timeout, NULL, 10);
+	if (!delay && errno)
+		err(EXIT_FAILURE, "strtoul failed");
+	else if (delay > UINT_MAX)
+		errx(EXIT_FAILURE, "timeout value '%lu' exceeds UINT_MAX", delay);
+
+	return (unsigned int)delay;
+}
+
 static const char*
 get_iface(void)
 {
@@ -186,31 +205,11 @@ sethandler(void)
 }
 
 static void
-setalarm(void)
-{
-	unsigned long delay;
-	const char *timeout;
-
-	if (!(timeout = getenv("IF_WAITIF_TIMEOUT")))
-		return; // no timeout configured
-
-	errno = 0;
-	delay = strtoul(timeout, NULL, 10);
-	if (!delay && errno)
-		err(EXIT_FAILURE, "strtoul failed");
-	else if (delay > UINT_MAX)
-		errx(EXIT_FAILURE, "timeout value '%lu' exceeds UINT_MAX", delay);
-	else if (delay) {
-		debug("Watchdog will timeout after %lu seconds", delay);
-		alarm((unsigned int)delay);
-	}
-}
-
-static void
 pre_up(void)
 {
 	pid_t pid;
 	const char *iface;
+	unsigned int delay;
 	struct context ctx;
 
 	iface = get_iface();
@@ -222,6 +221,8 @@ pre_up(void)
 	if (sigemptyset(&ctx.blockset) == -1)
 		err(EXIT_FAILURE, "sigemptyset failed");
 	sigaddset(&ctx.blockset, SIGALRM);
+	if ((delay = get_timeout()))
+		debug("Watchdog will timeout after %u seconds", delay);
 
 	ctx.fifo_path = fifo_path(iface);
 	if (mkfifo(ctx.fifo_path, 0600) == -1)
@@ -234,7 +235,8 @@ pre_up(void)
 		int fd;
 		const char *msg;
 
-		setalarm();
+		// Setup timeout mechanism via alarm(3).
+		if (delay) alarm(delay);
 
 		// XXX: If open(3) or write(3) fails, we can't do any
 		// meaningful error handling as up() won't be unblocked.
