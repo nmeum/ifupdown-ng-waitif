@@ -200,8 +200,10 @@ setalarm(void)
 		err(EXIT_FAILURE, "strtoul failed");
 	else if (delay > UINT_MAX)
 		errx(EXIT_FAILURE, "timeout value '%lu' exceeds UINT_MAX", delay);
-	else if (delay)
+	else if (delay) {
+		debug("Watchdog will timeout after %lu seconds", delay);
 		alarm((unsigned int)delay);
+	}
 }
 
 static void
