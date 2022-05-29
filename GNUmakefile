@@ -8,7 +8,7 @@ CPPFLAGS += -DRUNDIR=\"$(RUNDIR)\"
 
 CFLAGS ?= -O0 -g -Werror
 CFLAGS += -std=c99
-CFLAGS += -Wpedantic -Wall -Wextra \
+CFLAGS += -Wpedantic -Wall -Wextra -Wconversion \
 	      -Wmissing-prototypes -Wpointer-arith \
 	      -Wstrict-prototypes -Wshadow -Wformat-nonliteral
 

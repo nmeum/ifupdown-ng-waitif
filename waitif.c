@@ -36,7 +36,7 @@ struct {
 
 struct context {
 	int fd;
-	int if_idx;
+	unsigned int if_idx;
 	sigset_t blockset;
 	const char *fifo_path;
 };
@@ -107,7 +107,7 @@ data_cb(const struct nlmsghdr *nlh, void *data)
 	ctx = (struct context*)data;
 	ifm = mnl_nlmsg_get_payload(nlh);
 
-	if (ifm->ifi_index == ctx->if_idx && ifm->ifi_flags & IFF_RUNNING) {
+	if ((unsigned)ifm->ifi_index == ctx->if_idx && ifm->ifi_flags & IFF_RUNNING) {
 		if (sigprocmask(SIG_BLOCK, &ctx->blockset, NULL))
 			return MNL_CB_ERROR;
 		if ((ctx->fd = open(ctx->fifo_path, O_WRONLY)) == -1)
@@ -123,7 +123,7 @@ data_cb(const struct nlmsghdr *nlh, void *data)
 static int
 wait_if(struct context *ctx)
 {
-	int ret;
+	ssize_t ret;
 	struct mnl_socket *nl;
 	char buf[MNL_SOCKET_BUFFER_SIZE];
 
@@ -137,7 +137,7 @@ wait_if(struct context *ctx)
 
 	ret = mnl_socket_recvfrom(nl, buf, sizeof(buf));
 	while (ret > 0) {
-		ret = mnl_cb_run(buf, ret, 0, 0, data_cb, (void *)ctx);
+		ret = mnl_cb_run(buf, (size_t)ret, 0, 0, data_cb, (void *)ctx);
 		if (ret <= 0)
 			break;
 		ret = mnl_socket_recvfrom(nl, buf, sizeof(buf));
@@ -214,7 +214,7 @@ pre_up(void)
 	iface = get_iface();
 	if (!(ctx.if_idx = if_nametoindex(iface)))
 		errx(EXIT_FAILURE, "Unknown interface '%s'", iface);
-	debug("Starting watchdog for interface '%s' (index: %d)", iface, ctx.if_idx);
+	debug("Starting watchdog for interface '%s' (index: %u)", iface, ctx.if_idx);
 
 	sethandler();
 	if (sigemptyset(&ctx.blockset) == -1)
@@ -278,7 +278,7 @@ up(void)
 		err(EXIT_FAILURE, "opening read-end failed");
 
 	while ((ret = read(fd, buf, sizeof(buf))) > 0) {
-		if (write(STDERR_FILENO, buf, ret) == -1)
+		if (write(STDERR_FILENO, buf, (size_t)ret) == -1)
 			err(EXIT_FAILURE, "writing error message failed");
 	}
 	if (ret == -1)
