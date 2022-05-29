@@ -56,7 +56,7 @@ However, it is possible to configure a timeout mechanism, for example:
 		use dhcp
 
 The `waitif-timeout` keyword specifies a timeout in seconds.
-If the interface doesn't become running within this timespan, the `waitif` executor exits with `EXIT_FAILURE`.
+If the interface doesn't change to `IFF_RUNNING` within this timespan, then the `waitif` executor exits with `EXIT_FAILURE`.
 
 ## License
 
