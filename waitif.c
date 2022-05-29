@@ -3,6 +3,7 @@
 #include <fcntl.h>
 #include <limits.h>
 #include <signal.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -40,7 +41,20 @@ struct context {
 	const char *fifo_path;
 };
 
-// TODO: Support $VERBOSE
+static bool verbose;
+
+static void
+debug(const char *restrict fmt, ...)
+{
+	va_list ap;
+
+	if (!verbose)
+		return;
+
+	va_start(ap, fmt);
+	vwarnx(fmt, ap);
+	va_end(ap);
+}
 
 static ifupdown_phase
 get_phase(void)
@@ -200,6 +214,7 @@ pre_up(void)
 	iface = get_iface();
 	if (!(ctx.if_idx = if_nametoindex(iface)))
 		errx(EXIT_FAILURE, "Unknown interface '%s'", iface);
+	debug("Starting watchdog for interface '%s' (index: %d)", iface, ctx.if_idx);
 
 	sethandler();
 	if (sigemptyset(&ctx.blockset) == -1)
@@ -210,6 +225,7 @@ pre_up(void)
 	ctx.fifo_path = fifo_path(iface);
 	if (mkfifo(ctx.fifo_path, 0600) == -1)
 		err(EXIT_FAILURE, "mkfifo failed");
+	debug("Created named pipe at: %s", ctx.fifo_path);
 
 	pid = fork();
 	switch (pid) {
@@ -235,6 +251,8 @@ pre_up(void)
 	}
 	case -1:
 		err(EXIT_FAILURE, "fork failed");
+	default:
+		debug("Watchdog child process spawned with PID: %ld", (long)pid);
 	}
 
 	// Parent just exits, child is kept running
@@ -254,6 +272,7 @@ up(void)
 
 	// Block until writing end of FIFO was opened,
 	// i.e. until the interface is up and running.
+	debug("Waiting for interface '%s' to switch to IFF_RUNNING", iface);
 	if ((fd = open(fp, O_RDONLY)) == -1)
 		err(EXIT_FAILURE, "opening read-end failed");
 
@@ -265,6 +284,7 @@ up(void)
 		err(EXIT_FAILURE, "read failed");
 
 	close(fd);
+	debug("Removing named pipe at: %s", fp);
 	if (unlink(fp) == -1)
 		err(EXIT_FAILURE, "unlink failed");
 }
@@ -272,6 +292,9 @@ up(void)
 int
 main(void)
 {
+	// Set global verbose flag for debug function.
+	verbose = getenv("VERBOSE") != NULL;
+
 	switch (get_phase()) {
 	case PHASE_PRE_UP:
 		pre_up();
