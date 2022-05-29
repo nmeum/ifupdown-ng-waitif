@@ -201,13 +201,15 @@ up(void)
 	}
 	if (ret == -1)
 		err(EXIT_FAILURE, "read failed");
+
 	close(fd);
+	if (unlink(fp) == -1)
+		err(EXIT_FAILURE, "unlink failed");
 }
 
 int
 main(void)
 {
-	/* TODO: Destroy FIFO in post-up. */
 	switch (get_phase()) {
 	case PHASE_PRE_UP:
 		pre_up();
