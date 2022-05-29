@@ -46,7 +46,6 @@ For example:
 
 In this case, the `waitif` executor will block in the `up` phase until the interface switched to the `IFF_RUNNING` state.
 Afterwards, the `dhcp` executor is run and it will hopefully be able to retrieve a lease immediately.
-
 By default, the `waitif` executor will block indefinitely.
 However, it is possible to configure a timeout mechanism, for example:
 
