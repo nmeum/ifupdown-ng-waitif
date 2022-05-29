@@ -238,13 +238,13 @@ pre_up(void)
 		// Setup timeout mechanism via alarm(3).
 		if (delay) alarm(delay);
 
-		// XXX: If open(3) or write(3) fails, we can't do any
+		// XXX: If open(2) or write(3) fails, we can't do any
 		// meaningful error handling as up() won't be unblocked.
 		if ((fd = wait_if(&ctx)) == -1) {
 			msg = strerror(errno);
 
 			// Ignore sigprocmask error as we always want
-			// to unblock the up() process via open(3).
+			// to unblock the up() process via open(2).
 			sigprocmask(SIG_BLOCK, &ctx.blockset, NULL);
 
 			if ((fd = open(ctx.fifo_path, O_WRONLY)) == -1)
