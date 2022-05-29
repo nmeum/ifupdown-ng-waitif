@@ -194,16 +194,10 @@ static void
 pre_up(void)
 {
 	pid_t pid;
-	const char *fp;
 	const char *iface;
 	struct context ctx;
 
 	iface = get_iface();
-	fp = fifo_path(iface);
-	if (mkfifo(fp, 0600) == -1)
-		err(EXIT_FAILURE, "mkfifo failed");
-
-	ctx.fifo_path = fp;
 	if (!(ctx.if_idx = if_nametoindex(iface)))
 		errx(EXIT_FAILURE, "Unknown interface '%s'", iface);
 
@@ -212,6 +206,10 @@ pre_up(void)
 		err(EXIT_FAILURE, "sigemptyset failed");
 	sigaddset(&ctx.blockset, SIGALRM);
 	setalarm();
+
+	ctx.fifo_path = fifo_path(iface);
+	if (mkfifo(ctx.fifo_path, 0600) == -1)
+		err(EXIT_FAILURE, "mkfifo failed");
 
 	pid = fork();
 	switch (pid) {
