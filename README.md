@@ -1,3 +1,8 @@
+## Status
+
+This is a small proof of concept experiment for integrating [ifupdown-ng][ifupdown-ng github] with [netlink][netlink wikipedia] link state detection via [libmnl][libmnl web].
+The implementation is quite hacky but works well for my own ifupdown-ng setup so far.
+
 ## Background
 
 [ifupdown-ng][ifupdown-ng github] is a re-implementation of the `ifup` and `ifdown` commands provided by Debian and BusyBox.
