@@ -250,7 +250,7 @@ pre_up(void)
 
 			if ((fd = open(ctx.fifo_path, O_WRONLY)) == -1)
 				err(EXIT_FAILURE, "open write-end failed");
-			if (write(fd, msg, strlen(msg)) == -1 || write(fd, "\n", 1) == -1)
+			if (write(fd, msg, strlen(msg)) == -1)
 				err(EXIT_FAILURE, "write failed");
 		}
 
@@ -269,11 +269,13 @@ pre_up(void)
 static void
 up(void)
 {
-	ssize_t ret;
-	int fd, status;
+	int status;
+	FILE *stream;
+	ssize_t n;
+	char *line;
+	size_t llen;
 	const char *fp;
 	const char *iface;
-	char buf[BUFSIZ];
 
 	iface = get_iface();
 	fp = fifo_path(iface);
@@ -281,24 +283,22 @@ up(void)
 	// Block until writing end of FIFO was opened,
 	// i.e. until the interface is up and running.
 	debug("Waiting for interface '%s' to switch to IFF_RUNNING", iface);
-	if ((fd = open(fp, O_RDONLY)) == -1)
+	if (!(stream = fopen(fp, "r")))
 		err(EXIT_FAILURE, "opening read-end failed");
 
+	llen = 0;
+	line = NULL;
+	if ((n = getline(&line, &llen, stream)) == -1)
+		err(EXIT_FAILURE, "getline failed");
 	status = EXIT_SUCCESS;
-	while ((ret = read(fd, buf, sizeof(buf))) > 0) {
-		// Received error message via FIFO, update status accordingly.
+	if (n > 0) {
+		if (line[n - 1] == '\n')
+			line[n - 1] = '\0';
+		warnx("watchdog failure: %s", line);
 		status = EXIT_FAILURE;
-
-		// TODO: Prefix error message with program name.
-		// Ideally by buffering the message and using warnx(3).
-		if (write(STDERR_FILENO, buf, (size_t)ret) == -1)
-			err(EXIT_FAILURE, "writing error message failed");
 	}
-	if (ret == -1)
-		err(EXIT_FAILURE, "read failed");
-	debug("Watchdog for interface '%s' %s", iface, (status == EXIT_SUCCESS) ? "succeeded" : "failed");
 
-	close(fd);
+	fclose(stream);
 	debug("Removing named pipe at: %s", fp);
 	if (unlink(fp) == -1)
 		warn("unlink failed");
