@@ -177,7 +177,7 @@ sigalarm(int num)
 	int fd;
 	const char *fp;
 	const char *iface;
-	const char *errmsg = "timeout";
+	const char *errmsg = "timeout while waiting for interface to become ready";
 
 	(void)num;
 
