@@ -177,7 +177,7 @@ sigalarm(int num)
 	int fd;
 	const char *fp;
 	const char *iface;
-	const char *errmsg = "timeout\n";
+	const char *errmsg = "timeout";
 
 	(void)num;
 
@@ -292,8 +292,6 @@ up(void)
 		err(EXIT_FAILURE, "getline failed");
 	status = EXIT_SUCCESS;
 	if (n > 0) {
-		if (line[n - 1] == '\n')
-			line[n - 1] = '\0';
 		warnx("watchdog failure: %s", line);
 		status = EXIT_FAILURE;
 	}
