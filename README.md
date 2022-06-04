@@ -63,6 +63,12 @@ However, it is possible to configure a timeout mechanism, for example:
 The `waitif-timeout` keyword specifies a timeout in seconds.
 If the interface doesn't change to `IFF_RUNNING` within this timespan, then the `waitif` executor exits with `EXIT_FAILURE`.
 
+## Caveats
+
+ifupdown-ng currently does not stop executing executors of a given phase if one of them fails.
+As such, if the `waitif` up executor fails (e.g. due to a timeout) ifupdown-ng will still attempt to retrieve a DCHP lease.
+See: [ifupdown-ng#179][ifupdown-ng #179].
+
 ## License
 
 This program is free software: you can redistribute it and/or modify it
@@ -86,3 +92,4 @@ with this program. If not, see <http://www.gnu.org/licenses/>.
 [netlink wikipedia]: https://en.wikipedia.org/wiki/Netlink
 [libmnl web]: https://netfilter.org/projects/libmnl/
 [make web]: https://github.com/rocky/remake
+[ifupdown-ng #179]: https://github.com/ifupdown-ng/ifupdown-ng/pull/179
