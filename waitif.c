@@ -64,16 +64,6 @@ get_timeout(unsigned int *r)
 	return true;
 }
 
-static const char*
-get_iface(void)
-{
-	const char *iface;
-
-	if (!(iface = getenv("IFACE")))
-		return NULL;
-	return iface;
-}
-
 static int
 data_cb(const struct nlmsghdr *nlh, void *arg)
 {
@@ -143,7 +133,7 @@ start_nl_thread(pthread_t *thread, sem_t *sema)
 	const char *iface;
 	int iface_state_up;
 
-	if (!(iface = get_iface()) || !(ctx.if_idx = if_nametoindex(iface))) {
+	if (!(iface = getenv("IFACE")) || !(ctx.if_idx = if_nametoindex(iface))) {
 		errno = EINVAL;
 		return false;
 	}
