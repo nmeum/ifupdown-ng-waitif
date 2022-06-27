@@ -15,17 +15,6 @@ As such, executors which require the link to be up (e.g. the DHCP executor) usua
 As it turns out, choosing an appropriate interval is [difficult][alpine #13795].
 Inspired by [bncm-waitif][bncm-waitif web], this repository provides an executor which blocks until the interface state is changed to running by the Linux [netlink subsystem][netlink wikipedia].
 
-## Design
-
-The implementation is quite hacky, it would probably be easier to integrate this functionality directly into ifupdown-ng instead of implementing it in a separate executor.
-The provided executor runs in two phases: `pre-up` and `up`.
-In the `pre-up` phase a named pipe is created and a background process is spawned which waits for the configured interface to change its state to `IFF_RUNNING` (see `netdevice(7)`).
-In the `up` phase, a process is created which opens the named pipe for reading and blocks until it is opened for writing by the aforementioned background process.
-As such, the provided executor blocks in the `up` phase until the interface has reached its desired state or a timeout occurs.
-The executor is implemented in this way to avoid a race condition where the interface changes to `IFF_RUNNING` before the netlink event listener is setup correctly.
-Alternatively, it may be possible only run this executor in the `up` phase and check the interface state manually once via the `SIOCGIFFLAGS` ioctl before the netlink event listener is setup.
-Unfortunately, libmnl does not seem to provide a wrapper for this ioctl.
-
 ## Installation
 
 In order to build this software, install the following dependencies:
