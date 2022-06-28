@@ -1,7 +1,6 @@
 #include <err.h>
 #include <errno.h>
 #include <limits.h>
-#include <stdarg.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -24,21 +23,6 @@ struct context {
 	unsigned int if_idx;
 	sem_t *sema;
 };
-
-static bool verbose;
-
-static void
-debug(const char *restrict fmt, ...)
-{
-	va_list ap;
-
-	if (!verbose)
-		return;
-
-	va_start(ap, fmt);
-	vwarnx(fmt, ap);
-	va_end(ap);
-}
 
 static bool
 get_timeout(unsigned int *r)
@@ -73,10 +57,8 @@ data_cb(const struct nlmsghdr *nlh, void *arg)
 	ctx = (struct context *)arg;
 	ifm = mnl_nlmsg_get_payload(nlh);
 
-	if ((unsigned)ifm->ifi_index == ctx->if_idx && ifm->ifi_flags & IFF_RUNNING) {
-		debug("Interface with index %u is now IFF_RUNNING", ctx->if_idx);
+	if ((unsigned)ifm->ifi_index == ctx->if_idx && ifm->ifi_flags & IFF_RUNNING)
 		return MNL_CB_STOP;
-	}
 
 	return MNL_CB_OK;
 }
@@ -138,28 +120,22 @@ start_nl_thread(pthread_t *thread, sem_t *sema)
 		return false;
 	}
 
-	debug("Creating and binding netlink socket via libmnl");
 	ctx.nl = mnl_socket_open(NETLINK_ROUTE);
 	if (ctx.nl == NULL)
 		return false;
 	if (mnl_socket_bind(ctx.nl, RTMGRP_LINK, MNL_SOCKET_AUTOPID) == -1)
 		return false;
 
-	debug("Checking if link was up'ed prior to netlink socket creation...");
 	iface_state_up = iface_is_up(ctx.nl, iface);
 	if (iface_state_up == -1)
 		return false;
 
 	// Check if the link was up prior to socket creation.
 	if (iface_state_up) {
-		debug("Link is already up, unblocking main thread");
-
 		mnl_socket_close(ctx.nl);
 		if (sem_post(sema) == -1)
 			return false;
 	} else {
-		debug("Link isn't up, blocking main thread");
-
 		ctx.sema = sema;
 		if ((errno = pthread_create(thread, NULL, netlink_loop, &ctx)))
 			return false;
@@ -197,9 +173,6 @@ main(void)
 	const char *phase;
 	unsigned int timeout;
 
-	// Set global verbose flag for debug function.
-	verbose = getenv("VERBOSE") != NULL;
-
 	// Executor only runs in "up" phase.
 	if (!(phase = getenv("PHASE")))
 		errx(EXIT_FAILURE, "Couldn't determine current phase");
@@ -208,10 +181,15 @@ main(void)
 
 	if (!get_timeout(&timeout))
 		err(EXIT_FAILURE, "get_timeout failed");
-	if (timeout)
-		debug("Will block %u seconds for interface to come up", timeout);
-	else
-		debug("Will block indefinitely for interface to come up");
+
+	if (getenv("VERBOSE")) {
+		fprintf(stderr, "Waiting ");
+		if (timeout)
+			fprintf(stderr, "%u seconds", timeout);
+		else
+			fprintf(stderr, "indefinitely");
+		fprintf(stderr, " for interface to come up\n");
+	}
 
 	if (sem_init(&sema, 1, 0))
 		err(EXIT_FAILURE, "sem_init failed");
