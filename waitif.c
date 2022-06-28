@@ -183,7 +183,7 @@ main(void)
 	if (getenv("VERBOSE")) {
 		fprintf(stderr, "Waiting ");
 		if (timeout)
-			fprintf(stderr, "%u seconds", timeout);
+			fprintf(stderr, "up to %u seconds", timeout);
 		else
 			fprintf(stderr, "indefinitely");
 		fprintf(stderr, " for interface to come up\n");
