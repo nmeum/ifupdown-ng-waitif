@@ -191,7 +191,7 @@ main(void)
 		fprintf(stderr, " for interface to come up\n");
 	}
 
-	if (sem_init(&sema, 1, 0))
+	if (sem_init(&sema, 0, 0))
 		err(EXIT_FAILURE, "sem_init failed");
 
 	if (!start_nl_thread(&thread, &sema))
