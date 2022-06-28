@@ -1,16 +1,16 @@
 #include <err.h>
 #include <errno.h>
-#include <fcntl.h>
 #include <limits.h>
-#include <signal.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <semaphore.h>
+#include <pthread.h>
 
-#include <sys/stat.h>
+#include <sys/ioctl.h>
 #include <sys/types.h>
 
 #include <net/if.h>
@@ -21,29 +21,15 @@
 
 #define LEN(X) (sizeof(X) / sizeof(X[0]))
 
-typedef enum {
-	PHASE_PRE_UP,
-	PHASE_UP,
-	PHASE_UNKNOWN,
-} ifupdown_phase;
-
-struct {
-	const char *name;
-	const ifupdown_phase value;
-} phases[] = {
-	{ "pre-up", PHASE_PRE_UP },
-	{ "up", PHASE_UP },
-};
-
 struct context {
-	int fd;
+	struct mnl_socket *nl;
 	unsigned int if_idx;
-	sigset_t blockset;
-	const char *fifo_path;
+	sem_t *sema;
 };
 
 static bool verbose;
 
+#if 0
 static void
 debug(const char *restrict fmt, ...)
 {
@@ -56,22 +42,7 @@ debug(const char *restrict fmt, ...)
 	vwarnx(fmt, ap);
 	va_end(ap);
 }
-
-static ifupdown_phase
-get_phase(void)
-{
-	const char *phase;
-
-	if (!(phase = getenv("PHASE")))
-		errx(EXIT_FAILURE, "Couldn't determine current phase");
-
-	for (size_t i = 0; i < LEN(phases); i++) {
-		if (!strcmp(phase, phases[i].name))
-			return phases[i].value;
-	}
-
-	return PHASE_UNKNOWN;
-}
+#endif
 
 static unsigned int
 get_timeout(void)
@@ -102,222 +73,125 @@ get_iface(void)
 	return iface;
 }
 
-static const char*
-fifo_path(const char *iface)
-{
-	int ret;
-	static char fp[PATH_MAX+1];
-
-	ret = snprintf(fp, sizeof(fp), "%s/%s.waitif", RUNDIR, iface);
-	if (ret < 0) {
-		err(EXIT_FAILURE, "snprintf failed");
-	} else if ((size_t)ret >= sizeof(fp)) {
-		errx(EXIT_FAILURE, "snprintf: insufficient buffer size");
-	}
-
-	return fp;
-}
-
 static int
-data_cb(const struct nlmsghdr *nlh, void *data)
+data_cb(const struct nlmsghdr *nlh, void *arg)
 {
-	struct context *ctx;
 	struct ifinfomsg *ifm;
+	struct context *ctx;
 
-	ctx = (struct context*)data;
+	ctx = (struct context *)arg;
 	ifm = mnl_nlmsg_get_payload(nlh);
 
-	if ((unsigned)ifm->ifi_index == ctx->if_idx && ifm->ifi_flags & IFF_RUNNING) {
-		if (sigprocmask(SIG_BLOCK, &ctx->blockset, NULL))
-			return MNL_CB_ERROR;
-		if ((ctx->fd = open(ctx->fifo_path, O_WRONLY)) == -1)
-			return MNL_CB_ERROR;
-
-		// The proces running up() should be unblocked, we can stop.
+	if ((unsigned)ifm->ifi_index == ctx->if_idx && ifm->ifi_flags & IFF_RUNNING)
 		return MNL_CB_STOP;
-	}
 
 	return MNL_CB_OK;
 }
 
-static int
-wait_if(struct context *ctx)
+static void *
+netlink_loop(void *arg)
 {
 	ssize_t ret;
-	struct mnl_socket *nl;
+	struct context *ctx;
 	char buf[MNL_SOCKET_BUFFER_SIZE];
 
-	nl = mnl_socket_open(NETLINK_ROUTE);
-	if (nl == NULL)
-		return -1;
-	if (mnl_socket_bind(nl, RTMGRP_LINK, MNL_SOCKET_AUTOPID) < 0) {
-		mnl_socket_close(nl);
-		return -1;
-	}
-
-	ret = mnl_socket_recvfrom(nl, buf, sizeof(buf));
+	ctx = (struct context*)arg;
+	ret = mnl_socket_recvfrom(ctx->nl, buf, sizeof(buf));
 	while (ret > 0) {
-		ret = mnl_cb_run(buf, (size_t)ret, 0, 0, data_cb, (void *)ctx);
+		ret = mnl_cb_run(buf, (size_t)ret, 0, 0, data_cb, arg);
 		if (ret <= 0)
 			break;
-		ret = mnl_socket_recvfrom(nl, buf, sizeof(buf));
+		ret = mnl_socket_recvfrom(ctx->nl, buf, sizeof(buf));
 	}
 	if (ret == -1) {
-		mnl_socket_close(nl);
-		return -1;
+		fprintf(stderr, "ifupdown: netlink_loop failed %s\n", strerror(errno));
+		return NULL;
 	}
 
-	mnl_socket_close(nl);
-	return ctx->fd;
+	// Success: Increment semaphore.
+	if (sem_post(ctx->sema) == -1)
+		err(EXIT_FAILURE, "sem_post failed");
+
+	return NULL;
 }
 
-static void
-sigalarm(int num)
+static bool
+iface_is_up(struct mnl_socket *nl, const char *iface)
 {
 	int fd;
-	const char *fp;
-	const char *iface;
-	const char *errmsg = "timeout while waiting for interface to become ready";
+	size_t namelen;
+	struct ifreq req;
 
-	(void)num;
+	namelen = strlen(iface);
+	if (namelen >= IFNAMSIZ)
+		errx(EXIT_FAILURE, "interface name too long");
+	memcpy(req.ifr_name, iface, namelen+1);
 
-	iface = get_iface();
-	fp = fifo_path(iface);
-
-	if ((fd = open(fp, O_WRONLY)) == -1)
-		err(EXIT_FAILURE, "open write-end failed");
-	if (write(fd, errmsg, strlen(errmsg)) == -1)
-		err(EXIT_FAILURE, "write failed");
-
-	exit(EXIT_FAILURE);
+	fd = mnl_socket_get_fd(nl);
+	if (ioctl(fd, SIOCGIFFLAGS, &req) < 0)
+		err(EXIT_FAILURE, "ioctl with SIOCGIFFLAGS failed");
+	return req.ifr_flags & IFF_RUNNING;
 }
 
 static void
-sethandler(void)
+start_nl_thread(pthread_t *thread, sem_t *sema)
 {
-	struct sigaction act;
-
-	act.sa_flags = SA_RESTART;
-	act.sa_handler = sigalarm;
-	if (sigemptyset(&act.sa_mask) == -1)
-		err(EXIT_FAILURE, "sigemptyset failed");
-	if (sigaction(SIGALRM, &act, NULL))
-		err(EXIT_FAILURE, "sigaction failed");
-}
-
-static void
-pre_up(void)
-{
-	pid_t pid;
 	const char *iface;
-	unsigned int delay;
 	struct context ctx;
 
 	iface = get_iface();
 	if (!(ctx.if_idx = if_nametoindex(iface)))
 		errx(EXIT_FAILURE, "Unknown interface '%s'", iface);
-	debug("Starting watchdog for interface '%s' (index: %u)", iface, ctx.if_idx);
 
-	sethandler();
-	if (sigemptyset(&ctx.blockset) == -1)
-		err(EXIT_FAILURE, "sigemptyset failed");
-	sigaddset(&ctx.blockset, SIGALRM);
-	if ((delay = get_timeout()))
-		debug("Watchdog will timeout after %u seconds", delay);
+	ctx.nl = mnl_socket_open(NETLINK_ROUTE);
+	if (ctx.nl == NULL)
+		errx(EXIT_FAILURE, "mnl_socket_open failed");
+	if (mnl_socket_bind(ctx.nl, RTMGRP_LINK, MNL_SOCKET_AUTOPID) < 0)
+		errx(EXIT_FAILURE, "mnl_socket_bind failed");
 
-	ctx.fifo_path = fifo_path(iface);
-	if (mkfifo(ctx.fifo_path, 0600) == -1)
-		err(EXIT_FAILURE, "mkfifo failed");
-	debug("Created named pipe at: %s", ctx.fifo_path);
-
-	pid = fork();
-	switch (pid) {
-	case 0: {
-		int fd;
-		const char *msg;
-
-		// Setup timeout mechanism via alarm(3).
-		if (delay) alarm(delay);
-
-		// XXX: If open(2) or write(3) fails, we can't do any
-		// meaningful error handling as up() won't be unblocked.
-		if ((fd = wait_if(&ctx)) == -1) {
-			msg = strerror(errno);
-
-			// Ignore sigprocmask error as we always want
-			// to unblock the up() process via open(2).
-			sigprocmask(SIG_BLOCK, &ctx.blockset, NULL);
-
-			if ((fd = open(ctx.fifo_path, O_WRONLY)) == -1)
-				err(EXIT_FAILURE, "open write-end failed");
-			if (write(fd, msg, strlen(msg)) == -1)
-				err(EXIT_FAILURE, "write failed");
-		}
-
-		close(fd);
-		break;
+	// Check if the link was up prior to socket creation.
+	if (iface_is_up(ctx.nl, iface)) {
+		mnl_socket_close(ctx.nl);
+		if (sem_post(sema) == -1)
+			err(EXIT_FAILURE, "sem_post failed");
+	} else {
+		ctx.sema = sema;
+		if (pthread_create(thread, NULL, netlink_loop, &ctx))
+			errx(EXIT_FAILURE, "pthread_create failed");
 	}
-	case -1:
-		err(EXIT_FAILURE, "fork failed");
-	default:
-		debug("Watchdog child process spawned with PID: %ld", (long)pid);
-	}
-
-	// Parent just exits, child is kept running
-}
-
-static void
-up(void)
-{
-	int status;
-	FILE *stream;
-	ssize_t n;
-	char *line;
-	size_t llen;
-	const char *fp;
-	const char *iface;
-
-	iface = get_iface();
-	fp = fifo_path(iface);
-
-	// Block until writing end of FIFO was opened,
-	// i.e. until the interface is up and running.
-	debug("Waiting for interface '%s' to switch to IFF_RUNNING", iface);
-	if (!(stream = fopen(fp, "r")))
-		err(EXIT_FAILURE, "opening read-end failed");
-
-	llen = 0;
-	line = NULL;
-	if ((n = getline(&line, &llen, stream)) == -1)
-		err(EXIT_FAILURE, "getline failed");
-	status = EXIT_SUCCESS;
-	if (n > 0) {
-		warnx("watchdog failure: %s", line);
-		status = EXIT_FAILURE;
-	}
-
-	fclose(stream);
-	debug("Removing named pipe at: %s", fp);
-	if (unlink(fp) == -1)
-		warn("unlink failed");
-	exit(status);
 }
 
 int
 main(void)
 {
+	sem_t sema;
+	pthread_t thread;
+	const char *phase;
+	unsigned int timeout;
+
 	// Set global verbose flag for debug function.
 	verbose = getenv("VERBOSE") != NULL;
 
-	switch (get_phase()) {
-	case PHASE_PRE_UP:
-		pre_up();
+	// Executor only runs in "up" phase.
+	if (!(phase = getenv("PHASE")))
+		errx(EXIT_FAILURE, "Couldn't determine current phase");
+	if (strcmp(phase, "up"))
 		return EXIT_SUCCESS;
-	case PHASE_UP:
-		up();
-		return EXIT_SUCCESS;
-	default:
-		// Don't need to do anything in this phase
-		return EXIT_SUCCESS;
+
+	timeout = get_timeout();
+	start_nl_thread(&thread, &sema);
+
+	if (timeout) {
+		struct timespec ts;
+
+		if (clock_gettime(CLOCK_REALTIME, &ts))
+			err(EXIT_FAILURE, "clock_gettime failed");
+		ts.tv_sec += timeout;
+
+		if (sem_timedwait(&sema, &ts) == -1)
+			err(EXIT_FAILURE, "sem_timedwait failed");
+	} else {
+		if (sem_wait(&sema) == -1)
+			err(EXIT_FAILURE, "sem_wait failed");
 	}
 }
