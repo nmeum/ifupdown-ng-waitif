@@ -83,8 +83,7 @@ netlink_loop(void *arg)
 		return NULL;
 	}
 
-	// Success: Increment semaphore.
-	sem_post(ctx->sema); // XXX: error check
+	sem_post(ctx->sema);
 	return NULL;
 }
 
@@ -133,8 +132,7 @@ run_nl_thread(pthread_t *thread, sem_t *sema)
 	// Check if the link was up prior to socket creation.
 	if (iface_state_up) {
 		mnl_socket_close(ctx.nl);
-		if (sem_post(sema) == -1)
-			return false;
+		sem_post(sema);
 	} else {
 		ctx.sema = sema;
 		if ((errno = pthread_create(thread, NULL, netlink_loop, &ctx)))
@@ -191,9 +189,7 @@ main(void)
 		fprintf(stderr, " for interface to come up\n");
 	}
 
-	if (sem_init(&sema, 0, 0))
-		err(EXIT_FAILURE, "sem_init failed");
-
+	sem_init(&sema, 0, 0);
 	if (!run_nl_thread(&thread, &sema))
 		err(EXIT_FAILURE, "run_nl_thread failed");
 	if (!wait_for_iface(&sema, timeout))
