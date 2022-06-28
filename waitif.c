@@ -19,8 +19,6 @@
 #include <linux/if_link.h>
 #include <linux/rtnetlink.h>
 
-#define LEN(X) (sizeof(X) / sizeof(X[0]))
-
 struct context {
 	struct mnl_socket *nl;
 	unsigned int if_idx;
