@@ -29,7 +29,6 @@ struct context {
 
 static bool verbose;
 
-#if 0
 static void
 debug(const char *restrict fmt, ...)
 {
@@ -42,25 +41,29 @@ debug(const char *restrict fmt, ...)
 	vwarnx(fmt, ap);
 	va_end(ap);
 }
-#endif
 
-static unsigned int
-get_timeout(void)
+static bool
+get_timeout(unsigned int *r)
 {
 	unsigned long delay;
 	const char *timeout;
 
-	if (!(timeout = getenv("IF_WAITIF_TIMEOUT")))
-		return 0; // no timeout configured
+	if (!(timeout = getenv("IF_WAITIF_TIMEOUT"))) {
+		*r = 0; // no timeout configured
+		return true;
+	}
 
 	errno = 0;
 	delay = strtoul(timeout, NULL, 10);
-	if (!delay && errno)
-		err(EXIT_FAILURE, "strtoul failed");
-	else if (delay > UINT_MAX)
-		errx(EXIT_FAILURE, "timeout value '%lu' exceeds UINT_MAX", delay);
+	if (!delay && errno) {
+		return false;
+	} else if (delay > UINT_MAX) {
+		errno = EOVERFLOW;
+		return false;
+	}
 
-	return (unsigned int)delay;
+	*r = (unsigned int)delay;
+	return true;
 }
 
 static const char*
@@ -69,7 +72,7 @@ get_iface(void)
 	const char *iface;
 
 	if (!(iface = getenv("IFACE")))
-		errx(EXIT_FAILURE, "Couldn't determine interface name");
+		return NULL;
 	return iface;
 }
 
@@ -82,8 +85,10 @@ data_cb(const struct nlmsghdr *nlh, void *arg)
 	ctx = (struct context *)arg;
 	ifm = mnl_nlmsg_get_payload(nlh);
 
-	if ((unsigned)ifm->ifi_index == ctx->if_idx && ifm->ifi_flags & IFF_RUNNING)
+	if ((unsigned)ifm->ifi_index == ctx->if_idx && ifm->ifi_flags & IFF_RUNNING) {
+		debug("Interface with index %u is now IFF_RUNNING", ctx->if_idx);
 		return MNL_CB_STOP;
+	}
 
 	return MNL_CB_OK;
 }
@@ -104,18 +109,16 @@ netlink_loop(void *arg)
 		ret = mnl_socket_recvfrom(ctx->nl, buf, sizeof(buf));
 	}
 	if (ret == -1) {
-		fprintf(stderr, "ifupdown: netlink_loop failed %s\n", strerror(errno));
+		warn("netlink_loop failed");
 		return NULL;
 	}
 
 	// Success: Increment semaphore.
-	if (sem_post(ctx->sema) == -1)
-		err(EXIT_FAILURE, "sem_post failed");
-
+	sem_post(ctx->sema); // XXX: error check
 	return NULL;
 }
 
-static bool
+static int
 iface_is_up(struct mnl_socket *nl, const char *iface)
 {
 	int fd;
@@ -123,42 +126,76 @@ iface_is_up(struct mnl_socket *nl, const char *iface)
 	struct ifreq req;
 
 	namelen = strlen(iface);
-	if (namelen >= IFNAMSIZ)
-		errx(EXIT_FAILURE, "interface name too long");
+	if (namelen >= IFNAMSIZ) {
+		errno = ENAMETOOLONG;
+		return -1;
+	}
 	memcpy(req.ifr_name, iface, namelen+1);
 
 	fd = mnl_socket_get_fd(nl);
 	if (ioctl(fd, SIOCGIFFLAGS, &req) < 0)
-		err(EXIT_FAILURE, "ioctl with SIOCGIFFLAGS failed");
+		return -1;
 	return req.ifr_flags & IFF_RUNNING;
 }
 
-static void
+static bool
 start_nl_thread(pthread_t *thread, sem_t *sema)
 {
 	const char *iface;
+	int iface_state_up;
 	struct context ctx;
 
-	iface = get_iface();
-	if (!(ctx.if_idx = if_nametoindex(iface)))
-		errx(EXIT_FAILURE, "Unknown interface '%s'", iface);
+	if (!(iface = get_iface()) || !(ctx.if_idx = if_nametoindex(iface))) {
+		errno = EINVAL;
+		return false;
+	}
 
+	debug("Creating and binding netlink socket via libmnl");
 	ctx.nl = mnl_socket_open(NETLINK_ROUTE);
 	if (ctx.nl == NULL)
-		errx(EXIT_FAILURE, "mnl_socket_open failed");
-	if (mnl_socket_bind(ctx.nl, RTMGRP_LINK, MNL_SOCKET_AUTOPID) < 0)
-		errx(EXIT_FAILURE, "mnl_socket_bind failed");
+		return false;
+	if (mnl_socket_bind(ctx.nl, RTMGRP_LINK, MNL_SOCKET_AUTOPID) == -1)
+		return false;
+
+	debug("Checking if link was up'ed prior to netlink socket creation...");
+	iface_state_up = iface_is_up(ctx.nl, iface);
+	if (iface_state_up == -1)
+		return false;
 
 	// Check if the link was up prior to socket creation.
-	if (iface_is_up(ctx.nl, iface)) {
+	if (iface_state_up) {
+		debug("Link is already up, unblocking main thread");
+
 		mnl_socket_close(ctx.nl);
 		if (sem_post(sema) == -1)
-			err(EXIT_FAILURE, "sem_post failed");
+			return false;
 	} else {
+		debug("Link isn't up, blocking main thread");
+
 		ctx.sema = sema;
-		if (pthread_create(thread, NULL, netlink_loop, &ctx))
-			errx(EXIT_FAILURE, "pthread_create failed");
+		if ((errno = pthread_create(thread, NULL, netlink_loop, &ctx)))
+			return false;
 	}
+
+	return true;
+}
+
+static bool
+wait_for_iface(sem_t *sema, unsigned int timeout)
+{
+	struct timespec ts;
+
+	// No timeout → block indefinitely
+	if (!timeout && sem_wait(sema) == -1)
+		return false;
+
+	if (clock_gettime(CLOCK_REALTIME, &ts))
+		return false;
+	ts.tv_sec += timeout;
+	if (sem_timedwait(sema, &ts) == -1)
+		return false; // detect timeout via errno
+
+	return true;
 }
 
 int
@@ -178,20 +215,17 @@ main(void)
 	if (strcmp(phase, "up"))
 		return EXIT_SUCCESS;
 
-	timeout = get_timeout();
-	start_nl_thread(&thread, &sema);
+	if (!get_timeout(&timeout))
+		err(EXIT_FAILURE, "get_timeout failed");
+	if (timeout)
+		debug("Will block %u seconds for interface to come up", timeout);
+	else
+		debug("Will block indefinitely for interface to come up");
 
-	if (timeout) {
-		struct timespec ts;
+	if (!start_nl_thread(&thread, &sema))
+		err(EXIT_FAILURE, "start_nl_thread failed");
+	if (!wait_for_iface(&sema, timeout))
+		err(EXIT_FAILURE, "wait_for_iface failed");
 
-		if (clock_gettime(CLOCK_REALTIME, &ts))
-			err(EXIT_FAILURE, "clock_gettime failed");
-		ts.tv_sec += timeout;
-
-		if (sem_timedwait(&sema, &ts) == -1)
-			err(EXIT_FAILURE, "sem_timedwait failed");
-	} else {
-		if (sem_wait(&sema) == -1)
-			err(EXIT_FAILURE, "sem_wait failed");
-	}
+	return EXIT_SUCCESS;
 }
