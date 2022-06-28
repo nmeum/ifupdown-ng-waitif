@@ -141,9 +141,9 @@ iface_is_up(struct mnl_socket *nl, const char *iface)
 static bool
 start_nl_thread(pthread_t *thread, sem_t *sema)
 {
+	static struct context ctx;
 	const char *iface;
 	int iface_state_up;
-	struct context ctx;
 
 	if (!(iface = get_iface()) || !(ctx.if_idx = if_nametoindex(iface))) {
 		errno = EINVAL;
@@ -186,8 +186,11 @@ wait_for_iface(sem_t *sema, unsigned int timeout)
 	struct timespec ts;
 
 	// No timeout → block indefinitely
-	if (!timeout && sem_wait(sema) == -1)
-		return false;
+	if (!timeout) {
+		if (sem_wait(sema) == -1)
+			return false;
+		return true;
+	}
 
 	if (clock_gettime(CLOCK_REALTIME, &ts))
 		return false;
@@ -221,6 +224,9 @@ main(void)
 		debug("Will block %u seconds for interface to come up", timeout);
 	else
 		debug("Will block indefinitely for interface to come up");
+
+	if (sem_init(&sema, 1, 0))
+		err(EXIT_FAILURE, "sem_init failed");
 
 	if (!start_nl_thread(&thread, &sema))
 		err(EXIT_FAILURE, "start_nl_thread failed");
