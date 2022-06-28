@@ -12,7 +12,7 @@ CFLAGS += -Wpedantic -Wall -Wextra -Wconversion \
 	      -Wmissing-prototypes -Wpointer-arith \
 	      -Wstrict-prototypes -Wshadow -Wformat-nonliteral
 
-LDLIBS = -lmnl
+LDLIBS = -lmnl -pthread
 
 waitif: waitif.c
 install: waitif README.md
