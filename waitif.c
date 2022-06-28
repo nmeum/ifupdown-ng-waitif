@@ -109,7 +109,7 @@ iface_is_up(struct mnl_socket *nl, const char *iface)
 }
 
 static bool
-start_nl_thread(pthread_t *thread, sem_t *sema)
+run_nl_thread(pthread_t *thread, sem_t *sema)
 {
 	static struct context ctx;
 	const char *iface;
@@ -194,8 +194,8 @@ main(void)
 	if (sem_init(&sema, 0, 0))
 		err(EXIT_FAILURE, "sem_init failed");
 
-	if (!start_nl_thread(&thread, &sema))
-		err(EXIT_FAILURE, "start_nl_thread failed");
+	if (!run_nl_thread(&thread, &sema))
+		err(EXIT_FAILURE, "run_nl_thread failed");
 	if (!wait_for_iface(&sema, timeout))
 		err(EXIT_FAILURE, "wait_for_iface failed");
 
