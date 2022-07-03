@@ -21,6 +21,7 @@
 struct context {
 	struct mnl_socket *nl;
 	unsigned int if_idx;
+	int desired_state;
 	sem_t *sema;
 };
 
@@ -48,6 +49,26 @@ get_timeout(unsigned int *r)
 	return true;
 }
 
+static bool
+get_state(int *s)
+{
+	if (!(state = getenv("IF_WAITIF_STATE"))) {
+		s = IFF_RUNNING;
+		return true;
+	}
+
+	if (!strcmp(state, "running")) {
+		s = IFF_RUNNING;
+	} else if (!strcmp(state, "up")) {
+		s = IFF_UP;
+	} else {
+		errno = EINVAL;
+		return false;
+	}
+
+	return true;
+}
+
 static int
 data_cb(const struct nlmsghdr *nlh, void *arg)
 {
@@ -57,7 +78,7 @@ data_cb(const struct nlmsghdr *nlh, void *arg)
 	ctx = (struct context *)arg;
 	ifm = mnl_nlmsg_get_payload(nlh);
 
-	if ((unsigned)ifm->ifi_index == ctx->if_idx && ifm->ifi_flags & IFF_RUNNING)
+	if ((unsigned)ifm->ifi_index == ctx->if_idx && ifm->ifi_flags & ctx.desired_state)
 		return MNL_CB_STOP;
 
 	return MNL_CB_OK;
@@ -88,7 +109,7 @@ netlink_loop(void *arg)
 }
 
 static int
-iface_is_up(struct mnl_socket *nl, const char *iface)
+iface_is_up(struct mnl_socket *nl, int state, const char *iface)
 {
 	int fd;
 	size_t namelen;
@@ -104,7 +125,7 @@ iface_is_up(struct mnl_socket *nl, const char *iface)
 	fd = mnl_socket_get_fd(nl);
 	if (ioctl(fd, SIOCGIFFLAGS, &req) < 0)
 		return -1;
-	return req.ifr_flags & IFF_RUNNING;
+	return req.ifr_flags & state;
 }
 
 static bool
@@ -118,6 +139,8 @@ run_nl_thread(pthread_t *thread, sem_t *sema)
 		errno = EINVAL;
 		return false;
 	}
+	if (!get_state(&ctx.desired_state))
+		return false;
 
 	ctx.nl = mnl_socket_open(NETLINK_ROUTE);
 	if (ctx.nl == NULL)
@@ -125,7 +148,7 @@ run_nl_thread(pthread_t *thread, sem_t *sema)
 	if (mnl_socket_bind(ctx.nl, RTMGRP_LINK, MNL_SOCKET_AUTOPID) == -1)
 		return false;
 
-	iface_state_up = iface_is_up(ctx.nl, iface);
+	iface_state_up = iface_is_up(ctx.nl, ctx.desired_state, iface);
 	if (iface_state_up == -1)
 		return false;
 
