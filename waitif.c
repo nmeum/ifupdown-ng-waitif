@@ -171,6 +171,9 @@ main(void)
 	const char *phase;
 	unsigned int timeout;
 
+	// XXX: The executor doesn't require root privileges but is
+	// started as root by ifupdown-ng. We could drop privileges here.
+
 	// Executor only runs in "up" phase.
 	if (!(phase = getenv("PHASE")))
 		errx(EXIT_FAILURE, "Couldn't determine current phase");
