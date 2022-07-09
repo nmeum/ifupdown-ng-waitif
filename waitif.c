@@ -187,7 +187,7 @@ main(void)
 		err(EXIT_FAILURE, "get_timeout failed");
 
 	if (getenv("VERBOSE")) {
-		fprintf(stderr, "Waiting ");
+		fprintf(stderr, "waitif: Waiting ");
 		if (timeout)
 			fprintf(stderr, "up to %u seconds", timeout);
 		else
