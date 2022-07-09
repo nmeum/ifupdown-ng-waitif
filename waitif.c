@@ -18,6 +18,9 @@
 #include <linux/if_link.h>
 #include <linux/rtnetlink.h>
 
+/* Timeout after 30s by default, set to zero to wait indefinitely. */
+#define DEFAULT_TIMEOUT 30
+
 struct context {
 	struct mnl_socket *nl;
 	unsigned int if_idx;
@@ -31,7 +34,7 @@ get_timeout(unsigned int *r)
 	const char *timeout;
 
 	if (!(timeout = getenv("IF_WAITIF_TIMEOUT"))) {
-		*r = 0; // no timeout configured
+		*r = DEFAULT_TIMEOUT; // no timeout configured
 		return true;
 	}
 

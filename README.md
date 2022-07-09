@@ -40,17 +40,16 @@ For example:
 
 In this case, the `waitif` executor will block in the `up` phase until the interface switched to the `IFF_RUNNING` state.
 Afterwards, the `dhcp` executor is run and it will hopefully be able to retrieve a lease immediately.
-By default, the `waitif` executor will block indefinitely.
-However, it is possible to configure a timeout mechanism, for example:
+By default, the `waitif` executor will wait for up to 30 seconds for the interface to come up.
+If the interface doesn't change to `IFF_RUNNING` within this timespan, then the `waitif` executor exits with `EXIT_FAILURE`.
+It is possible to configure a different timeout value using `waitif-timeout`, for example:
 
 	iface wlan0
-		waitif-timeout 30
-
+		waitif-timeout 10
 		use waitif
 		use dhcp
 
-The `waitif-timeout` keyword specifies a timeout in seconds.
-If the interface doesn't change to `IFF_RUNNING` within this timespan, then the `waitif` executor exits with `EXIT_FAILURE`.
+The `waitif-timeout` keyword specifies a timeout in seconds, the timeout can be set to zero to wait indefinitely.
 
 ## Caveats
 
