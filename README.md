@@ -1,7 +1,7 @@
 ## Status
 
-This is a small proof of concept experiment for integrating [ifupdown-ng][ifupdown-ng github] with [netlink][netlink wikipedia] link state detection via [libmnl][libmnl web].
-The implementation is quite hacky but works well for my own ifupdown-ng setup so far.
+This software integrates [ifupdown-ng][ifupdown-ng github] with [netlink][netlink wikipedia] link state detection via [libmnl][libmnl web].
+I use this software myself and I am presently not aware of any bugs with the implemented functionality.
 
 ## Background
 
